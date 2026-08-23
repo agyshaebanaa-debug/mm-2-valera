@@ -1,10 +1,5 @@
 -- =================================================================
---   👑 VALERA DAYN V6 GODMODE MEGA HUB [MM2]
---   • Manual Controlled Mobile Fly (No auto-drift)
---   • Coin Auto-Farm & Box Opener
---   • Hitbox Expander & Distance Radar
---   • Client-side Skin Changer & Spectate
---   • Dark Purple Neon Ultra Theme
+--   👑 VALERA DAYN V8 GODMODE APEX [MM2 FIXED AUTO-GRAB & FLING]
 -- =================================================================
 
 local Players = game:GetService("Players")
@@ -14,6 +9,7 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -23,32 +19,34 @@ if not pcall(function() local _ = TargetGui.Name end) then
     TargetGui = LocalPlayer:WaitForChild("PlayerGui")
 end
 
-if TargetGui:FindFirstChild("ValeraDayn_V6") then
-    TargetGui.ValeraDayn_V6:Destroy()
+if TargetGui:FindFirstChild("ValeraDayn_V8") then
+    TargetGui.ValeraDayn_V8:Destroy()
 end
 
--- // Хранилище Настроек
+-- // Хранилище настроек
 local Config = {
     -- Combat
     SheriffAutoShoot = false,
+    SheriffSilentAim = false,
     MurderKillAll = false,
     KnifeAura = false,
     KnifeAuraDist = 18,
     HitboxExpander = false,
-    HitboxSize = 8,
+    HitboxSize = 10,
     AutoGrabGun = false,
-    AntiStab = false,
+    AutoDodge = false,
     
-    -- Farm & Economy
+    -- Farm & Auto
     AutoFarmCoins = false,
     CoinMagnet = false,
-    AutoOpenBoxes = false,
     
     -- Visuals & Radar
     RoleESP = true,
     GunESP = true,
     NameESP = true,
     DistanceRadar = true,
+    CustomCrosshair = false,
+    FOVValue = 70,
     ChromaSkins = false,
     Fullbright = false,
     Xray = false,
@@ -57,7 +55,7 @@ local Config = {
     SpeedValue = 16,
     SpeedEnabled = false,
     Fly = false,
-    FlySpeed = 25,
+    FlySpeed = 30,
     InfiniteJump = false,
     Noclip = false,
     AntiVoid = true,
@@ -70,7 +68,7 @@ local Config = {
 }
 
 local ConfigFolder = "ValeraDayn_Configs"
-local ConfigPath = ConfigFolder .. "/MM2_V6_Mega.json"
+local ConfigPath = ConfigFolder .. "/MM2_V8_Apex.json"
 
 local function SaveConfig()
     pcall(function()
@@ -91,7 +89,7 @@ local function LoadConfig()
 end
 LoadConfig()
 
--- // Вспомогательные функции
+-- // Поиск ролей и объектов
 local function GetPlayerRole(plr)
     if not plr or not plr.Character then return "Innocent" end
     local c = plr.Character
@@ -101,10 +99,15 @@ local function GetPlayerRole(plr)
     return "Innocent"
 end
 
-local function FindDroppedGun()
-    for _, item in ipairs(Workspace:GetDescendants()) do
-        if item.Name == "GunDrop" and (item:IsA("BasePart") or item:IsA("Model")) then
-            return item:IsA("Model") and (item.PrimaryPart or item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")) or item
+local function FindGunDropPart()
+    local drop = Workspace:FindFirstChild("GunDrop")
+    if drop then
+        if drop:IsA("BasePart") then return drop end
+        if drop:IsA("Model") then return drop.PrimaryPart or drop:FindFirstChild("Handle") or drop:FindFirstChildWhichIsA("BasePart") end
+    end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if (obj.Name == "GunDrop" or obj.Name == "GunPickup") and (obj:IsA("BasePart") or obj:IsA("Model")) then
+            return obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart")) or obj
         end
     end
     return nil
@@ -114,11 +117,24 @@ local FlyUp = false
 local FlyDown = false
 local LastSafePos = CFrame.new(0, 10, 0)
 
--- // UI (Dark Purple Neon)
+-- // Интерфейс Dark Purple Neon
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ValeraDayn_V6"
+ScreenGui.Name = "ValeraDayn_V8"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = TargetGui
+
+-- Прицел
+local Crosshair = Instance.new("Frame")
+Crosshair.Size = UDim2.new(0, 6, 0, 6)
+Crosshair.Position = UDim2.new(0.5, -3, 0.5, -3)
+Crosshair.BackgroundColor3 = Color3.fromRGB(199, 125, 255)
+Crosshair.BorderSizePixel = 0
+Crosshair.Visible = Config.CustomCrosshair
+Crosshair.Parent = ScreenGui
+Instance.new("UICorner", Crosshair).CornerRadius = UDim.new(1, 0)
+local CHStroke = Instance.new("UIStroke", Crosshair)
+CHStroke.Color = Color3.fromRGB(255, 255, 255)
+CHStroke.Thickness = 1
 
 -- Плавающая кнопка
 local StealthBtn = Instance.new("TextButton")
@@ -135,10 +151,10 @@ local SStroke = Instance.new("UIStroke", StealthBtn)
 SStroke.Color = Color3.fromRGB(157, 78, 221)
 SStroke.Thickness = 2
 
--- Радар Расстояния до Мардера
+-- Радар
 local RadarFrame = Instance.new("Frame")
-RadarFrame.Size = UDim2.new(0, 150, 0, 32)
-RadarFrame.Position = UDim2.new(0.5, -75, 0.03, 0)
+RadarFrame.Size = UDim2.new(0, 160, 0, 32)
+RadarFrame.Position = UDim2.new(0.5, -80, 0.03, 0)
 RadarFrame.BackgroundColor3 = Color3.fromRGB(18, 10, 32)
 RadarFrame.Visible = Config.DistanceRadar
 RadarFrame.Parent = ScreenGui
@@ -155,7 +171,7 @@ RadarLabel.TextSize = 10
 RadarLabel.Font = Enum.Font.GothamBold
 RadarLabel.Parent = RadarFrame
 
--- Мобильные кнопки высоты для Fly
+-- Мобильный Fly контроллер
 local FlyControls = Instance.new("Frame")
 FlyControls.Size = UDim2.new(0, 50, 0, 110)
 FlyControls.Position = UDim2.new(0.9, -20, 0.5, -55)
@@ -190,8 +206,8 @@ DownBtn.MouseButton1Up:Connect(function() FlyDown = false end)
 -- Главный фрейм
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 480, 0, 310)
-MainFrame.Position = UDim2.new(0.5, -240, 0.5, -155)
+MainFrame.Size = UDim2.new(0, 490, 0, 315)
+MainFrame.Position = UDim2.new(0.5, -245, 0.5, -157)
 MainFrame.BackgroundColor3 = Color3.fromRGB(11, 8, 19)
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
@@ -201,7 +217,6 @@ local MStroke = Instance.new("UIStroke", MainFrame)
 MStroke.Color = Color3.fromRGB(157, 78, 221)
 MStroke.Thickness = 1.5
 
--- Верхняя панель
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 42)
 Header.BackgroundColor3 = Color3.fromRGB(20, 12, 38)
@@ -213,7 +228,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(0, 260, 1, 0)
 Title.Position = UDim2.new(0, 14, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "👑 VALERA DAYN V6 [MEGA]"
+Title.Text = "👑 VALERA DAYN V8 [APEX]"
 Title.TextColor3 = Color3.fromRGB(224, 170, 255)
 Title.TextSize = 13
 Title.Font = Enum.Font.GothamBlack
@@ -231,7 +246,6 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.Parent = Header
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
--- Горизонтальные Вкладки
 local TabBar = Instance.new("Frame")
 TabBar.Size = UDim2.new(1, -20, 0, 32)
 TabBar.Position = UDim2.new(0, 10, 0, 48)
@@ -261,7 +275,7 @@ for i, tab in ipairs(TabNames) do
     Page.BorderSizePixel = 0
     Page.ScrollBarThickness = 2
     Page.Visible = (i == 1)
-    Page.CanvasSize = UDim2.new(0, 0, 0, 340)
+    Page.CanvasSize = UDim2.new(0, 0, 0, 360)
     Page.Parent = PagesContainer
 
     local Grid = Instance.new("UIGridLayout")
@@ -272,7 +286,7 @@ for i, tab in ipairs(TabNames) do
     TabPages[tab] = Page
 
     local TabBtn = Instance.new("TextButton")
-    TabBtn.Size = UDim2.new(0, 85, 1, 0)
+    TabBtn.Size = UDim2.new(0, 88, 1, 0)
     TabBtn.BackgroundColor3 = (i == 1) and Color3.fromRGB(157, 78, 221) or Color3.fromRGB(24, 15, 46)
     TabBtn.Text = tab:upper()
     TabBtn.TextColor3 = (i == 1) and Color3.fromRGB(15, 8, 28) or Color3.fromRGB(200, 180, 230)
@@ -295,7 +309,7 @@ for i, tab in ipairs(TabNames) do
     end)
 end
 
--- Конструкторы UI
+-- Конструкторы элементов
 local function AddToggle(parentTab, text, key, callback)
     local Btn = Instance.new("TextButton")
     Btn.BackgroundColor3 = Config[key] and Color3.fromRGB(60, 24, 94) or Color3.fromRGB(20, 12, 38)
@@ -373,8 +387,7 @@ local function AddSlider(parentTab, titleText, minVal, maxVal, currentVal, callb
     local isDragging = false
     Bar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            isDragging = true
-            Update(input)
+            isDragging = true; Update(input)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
@@ -389,97 +402,110 @@ local function AddSlider(parentTab, titleText, minVal, maxVal, currentVal, callb
     end)
 end
 
+-- ==================== ФУНКЦИИ ВЫСТРЕЛА И ПОДБОРА ====================
+local function PerfectShootMurderer()
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
+    local gun = LocalPlayer.Backpack:FindFirstChild("Gun") or myChar:FindFirstChild("Gun")
+    if not gun then return end
+    gun.Parent = myChar
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and GetPlayerRole(plr) == "Murderer" and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local tHRP = plr.Character.HumanoidRootPart
+            local ping = pcall(function() return LocalPlayer:GetNetworkPing() end) and LocalPlayer:GetNetworkPing() or 0.05
+            local predictedPos = tHRP.Position + (tHRP.AssemblyLinearVelocity * (ping * 1.5))
+            
+            myChar.HumanoidRootPart.CFrame = CFrame.new(myChar.HumanoidRootPart.Position, Vector3.new(predictedPos.X, myChar.HumanoidRootPart.Position.Y, predictedPos.Z))
+
+            for _, rem in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+                if rem:IsA("RemoteEvent") and (rem.Name == "ShootGun" or rem.Name:lower():find("shoot")) then
+                    pcall(function() rem:FireServer(1, predictedPos, "Gun") end)
+                end
+            end
+            pcall(function() gun:Activate() end)
+            break
+        end
+    end
+end
+
 -- ==================== НАПОЛНЕНИЕ МЕНЮ ====================
 
 -- 1. COMBAT
-AddToggle("Combat", "Автовыстрел Шериф", "SheriffAutoShoot")
+AddToggle("Combat", "Автовыстрел Шерифа", "SheriffAutoShoot")
+AddToggle("Combat", "Silent Aim Шерифа", "SheriffSilentAim")
 AddToggle("Combat", "Kill All Мирных", "MurderKillAll")
-AddToggle("Combat", "Knife Aura (Радиус)", "KnifeAura")
+AddToggle("Combat", "Knife Aura", "KnifeAura")
 AddToggle("Combat", "Hitbox Expander", "HitboxExpander")
-AddSlider("Combat", "Размер Hitbox", 2, 25, Config.HitboxSize, function(val)
+AddSlider("Combat", "Размер Hitbox", 2, 35, Config.HitboxSize, function(val)
     Config.HitboxSize = val
     SaveConfig()
 end)
-AddButton("Combat", "Fake Dead (Притвориться)", function()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-        task.wait(2)
-        char.Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-    end
-end)
+AddToggle("Combat", "Auto-Dodge", "AutoDodge")
+AddButton("Combat", "Ручной Выстрел", PerfectShootMurderer)
 
 -- 2. FARM & AUTO
 AddToggle("Farm & Auto", "Автофарм Монет", "AutoFarmCoins")
 AddToggle("Farm & Auto", "Магнит Монет", "CoinMagnet")
-AddButton("Farm & Auto", "Авто-Открытие Ящика", function()
-    local buyRemote = game:GetService("ReplicatedStorage"):FindFirstChild("BuyMysteryBox", true)
-    if buyRemote then buyRemote:FireServer("StandardBox") end
+AddButton("Farm & Auto", "Купить Mystery Box", function()
+    local buy = game:GetService("ReplicatedStorage"):FindFirstChild("BuyMysteryBox", true)
+    if buy then buy:FireServer("StandardBox") end
 end)
 
 -- 3. VISUALS
 AddToggle("Visuals", "ESP Ролей", "RoleESP")
 AddToggle("Visuals", "ESP Пистолета", "GunESP")
-AddToggle("Visuals", "Радар Мардера HUD", "DistanceRadar", function(v)
-    RadarFrame.Visible = v
+AddToggle("Visuals", "Радар Мардера HUD", "DistanceRadar", function(v) RadarFrame.Visible = v end)
+AddToggle("Visuals", "Кастомный Прицел", "CustomCrosshair", function(v) Crosshair.Visible = v end)
+AddSlider("Visuals", "Угол Обзора (FOV)", 70, 120, Config.FOVValue, function(val)
+    Config.FOVValue = val; Camera.FieldOfView = val; SaveConfig()
 end)
 AddToggle("Visuals", "Chroma Скины", "ChromaSkins")
 AddToggle("Visuals", "Fullbright", "Fullbright", function(v)
-    Lighting.Brightness = v and 3 or 1
-    Lighting.ClockTime = v and 14 or 12
-    Lighting.GlobalShadows = not v
+    Lighting.Brightness = v and 3 or 1; Lighting.ClockTime = v and 14 or 12; Lighting.GlobalShadows = not v
 end)
 
 -- 4. MOVEMENT
-AddToggle("Movement", "Авто-Подбор Гана", "AutoGrabGun")
+AddToggle("Movement", "Авто-Подбор Гана [FIX]", "AutoGrabGun")
 AddToggle("Movement", "Спидхак", "SpeedEnabled")
 AddSlider("Movement", "Скорость Бега", 1, 100, Config.SpeedValue, function(val)
-    Config.SpeedValue = val
-    SaveConfig()
+    Config.SpeedValue = val; SaveConfig()
 end)
-AddToggle("Movement", "Ручной Mobile Fly", "Fly", function(v)
-    FlyControls.Visible = v
-end)
+AddToggle("Movement", "Mobile Fly", "Fly", function(v) FlyControls.Visible = v end)
 AddSlider("Movement", "Скорость Fly", 5, 80, Config.FlySpeed, function(val)
-    Config.FlySpeed = val
-    SaveConfig()
+    Config.FlySpeed = val; SaveConfig()
 end)
 AddToggle("Movement", "Noclip", "Noclip")
 AddToggle("Movement", "Anti-Void Спасение", "AntiVoid")
 AddToggle("Movement", "Бесконечный Прыжок", "InfiniteJump")
 
 -- 5. MISC & TROLL
-AddToggle("Misc & Troll", "Чат-Аннонсер Ролей", "ChatAnnouncer")
+AddToggle("Misc & Troll", "Fling All [FIX]", "FlingAll")
+AddToggle("Misc & Troll", "Чат-Аннонсер", "ChatAnnouncer")
 AddToggle("Misc & Troll", "Anti-Scam Трейда", "TradeScamAlert")
-AddButton("Misc & Troll", "Спектатор Мардера", function()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if GetPlayerRole(plr) == "Murderer" and plr.Character and plr.Character:FindFirstChild("Humanoid") then
-            Camera.CameraSubject = plr.Character.Humanoid
+AddButton("Misc & Troll", "Rejoin", function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+AddButton("Misc & Troll", "Server Hop", function()
+    local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+    for _, s in ipairs(servers.data) do
+        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+            break
         end
     end
 end)
-AddButton("Misc & Troll", "Вернуть Камеру", function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        Camera.CameraSubject = LocalPlayer.Character.Humanoid
-    end
-end)
-AddToggle("Misc & Troll", "Fling All", "FlingAll")
 AddButton("Misc & Troll", "ТП к Пистолету", function()
-    local g = FindDroppedGun()
+    local g = FindGunDropPart()
     if g and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = g.CFrame + Vector3.new(0, 2, 0)
+        LocalPlayer.Character.HumanoidRootPart.CFrame = g.CFrame + Vector3.new(0, 3, 0)
     end
 end)
 
--- ==================== ОБРАБОТЧИКИ И ЦИКЛЫ ====================
+-- ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
 
--- Перетаскивание стелс-кнопки
 local isDrag, dStart, sPos
 StealthBtn.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
-        isDrag = true
-        dStart = inp.Position
-        sPos = StealthBtn.Position
+        isDrag = true; dStart = inp.Position; sPos = StealthBtn.Position
     end
 end)
 StealthBtn.InputEnded:Connect(function(inp)
@@ -496,32 +522,26 @@ end)
 StealthBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
 CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
--- Бесконечный прыжок
 UserInputService.JumpRequest:Connect(function()
     if Config.InfiniteJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 
--- Основной цикл RenderStepped
+-- ==================== РЕНДЕР ЦИКЛ (RenderStepped) ====================
 RunService.RenderStepped:Connect(function()
     local myChar = LocalPlayer.Character
     local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local myHum = myChar and myChar:FindFirstChild("Humanoid")
 
-    -- Спидхак
-    if myHum and Config.SpeedEnabled then
-        myHum.WalkSpeed = Config.SpeedValue
-    end
+    if myHum and Config.SpeedEnabled then myHum.WalkSpeed = Config.SpeedValue end
 
-    -- Noclip
     if Config.Noclip and myChar then
         for _, part in ipairs(myChar:GetDescendants()) do
             if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
 
-    -- Anti-Void спасение
     if myHRP then
         if myHRP.Position.Y > -40 then
             LastSafePos = myHRP.CFrame
@@ -531,29 +551,41 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Ручной Fly (Движется только по направлению стика + кнопки вверх/вниз)
+    -- Ручной Fly
     if Config.Fly and myHRP and myHum then
         local moveDir = myHum.MoveDirection
         local upVel = 0
         if FlyUp then upVel = Config.FlySpeed end
         if FlyDown then upVel = -Config.FlySpeed end
-        
         myHRP.AssemblyLinearVelocity = Vector3.new(moveDir.X * Config.FlySpeed, upVel, moveDir.Z * Config.FlySpeed)
     end
 
     -- Hitbox Expander
-    if Config.HitboxExpander then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                local hrp = plr.Character.HumanoidRootPart
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local char = plr.Character
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+            
+            if Config.HitboxExpander and hrp then
                 hrp.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
-                hrp.Transparency = 0.7
+                hrp.Transparency = 0.6
                 hrp.CanCollide = false
+                hrp.Massless = true
+                if torso then
+                    torso.Size = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+                    torso.CanCollide = false
+                    torso.Massless = true
+                end
+            elseif not Config.HitboxExpander and hrp and hrp.Size ~= Vector3.new(2, 2, 1) then
+                hrp.Size = Vector3.new(2, 2, 1)
+                hrp.Transparency = 1
+                if torso then torso.Size = Vector3.new(2, 2, 1) end
             end
         end
     end
 
-    -- ESP & Дистанция Мардера на Радаре
+    -- ESP & Radar & AutoDodge
     local mFound = false
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
@@ -564,6 +596,11 @@ RunService.RenderStepped:Connect(function()
                 mFound = true
                 local dist = math.floor((myHRP.Position - char.HumanoidRootPart.Position).Magnitude)
                 RadarLabel.Text = "🔴 Мардер: " .. plr.Name .. " [" .. dist .. "m]"
+                
+                if Config.AutoDodge and dist < 12 then
+                    local fleeDir = (myHRP.Position - char.HumanoidRootPart.Position).Unit
+                    myHRP.CFrame = myHRP.CFrame + (fleeDir * 2)
+                end
             end
 
             if Config.RoleESP then
@@ -579,59 +616,66 @@ RunService.RenderStepped:Connect(function()
     end
     if not mFound then RadarLabel.Text = "🟢 Мардер: Не обнаружен" end
 
-    -- Chroma Skins Effect
-    if Config.ChromaSkins and myChar then
-        local hue = tick() % 5 / 5
-        local chromaColor = Color3.fromHSV(hue, 1, 1)
-        for _, tool in ipairs(myChar:GetChildren()) do
-            if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
-                tool.Handle.Color = chromaColor
-            end
-        end
+    -- ESP Выпавшего Гана
+    local gun = FindGunDropPart()
+    if gun and Config.GunESP then
+        local ghl = gun:FindFirstChild("VD_GunHL") or Instance.new("Highlight")
+        ghl.Name = "VD_GunHL"
+        ghl.Parent = gun
+        ghl.FillColor = Color3.fromRGB(255, 215, 0)
     end
 end)
 
--- Фоновые боевые и фарм циклы
+-- ==================== ФИЗИЧЕСКИЙ ЦИКЛ (Heartbeat) ====================
 RunService.Heartbeat:Connect(function()
     pcall(function()
         local myChar = LocalPlayer.Character
         if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
         local myHRP = myChar.HumanoidRootPart
+        local myHum = myChar:FindFirstChild("Humanoid")
 
-        -- Автофарм и магнит монет
-        if Config.AutoFarmCoins or Config.CoinMagnet then
-            for _, coin in ipairs(Workspace:GetDescendants()) do
-                if coin.Name == "Coin_Server" or coin.Name == "Coin" or coin.Name:find("Coin") then
-                    if coin:IsA("BasePart") then
-                        if Config.CoinMagnet and (myHRP.Position - coin.Position).Magnitude < 25 then
-                            coin.CFrame = myHRP.CFrame
-                        elseif Config.AutoFarmCoins then
-                            myHRP.CFrame = coin.CFrame
-                            task.wait(0.1)
+        -- 1. Исправленный Автоподбор Гана
+        if Config.AutoGrabGun then
+            local gunPart = FindGunDropPart()
+            local hasGun = LocalPlayer.Backpack:FindFirstChild("Gun") or myChar:FindFirstChild("Gun")
+            if gunPart and not hasGun then
+                myHRP.CFrame = gunPart.CFrame + Vector3.new(0, 1.5, 0)
+                if firetouchinterest then
+                    firetouchinterest(myHRP, gunPart, 0)
+                    firetouchinterest(myHRP, gunPart, 1)
+                end
+            end
+        end
+
+        -- 2. Исправленный Рабочий Fling All
+        if Config.FlingAll and myHum and myHRP then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") then
+                    if plr.Character.Humanoid.Health > 0 then
+                        local targetHRP = plr.Character.HumanoidRootPart
+                        
+                        -- Настройка физики для силового толчка
+                        myHum:ChangeState(Enum.HumanoidStateType.Physics)
+                        for _, p in ipairs(myChar:GetChildren()) do
+                            if p:IsA("BasePart") then p.CanCollide = false end
                         end
+                        
+                        -- Вращательное ускорение внутри цели
+                        myHRP.CFrame = targetHRP.CFrame * CFrame.Angles(math.rad(math.random(0, 360)), math.rad(math.random(0, 360)), 0)
+                        myHRP.AssemblyAngularVelocity = Vector3.new(50000, 50000, 50000)
+                        myHRP.AssemblyLinearVelocity = Vector3.new(50000, 50000, 50000)
+                        task.wait(0.03)
                     end
                 end
             end
         end
 
-        -- Автовыстрел Шерифа
+        -- 3. Автовыстрел Шерифа
         if Config.SheriffAutoShoot then
-            local gun = LocalPlayer.Backpack:FindFirstChild("Gun") or myChar:FindFirstChild("Gun")
-            if gun then
-                gun.Parent = myChar
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= LocalPlayer and GetPlayerRole(plr) == "Murderer" and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                        local tHRP = plr.Character.HumanoidRootPart
-                        local shootRemote = game:GetService("ReplicatedStorage"):FindFirstChild("ShootGun", true)
-                        if shootRemote then
-                            shootRemote:FireServer(1, tHRP.Position + (tHRP.AssemblyLinearVelocity * 0.12), "Gun")
-                        end
-                    end
-                end
-            end
+            PerfectShootMurderer()
         end
 
-        -- Kill All за Мардера
+        -- 4. Kill All за Мардера
         if Config.MurderKillAll and GetPlayerRole(LocalPlayer) == "Murderer" then
             local knife = LocalPlayer.Backpack:FindFirstChild("Knife") or myChar:FindFirstChild("Knife")
             if knife then
@@ -651,4 +695,4 @@ RunService.Heartbeat:Connect(function()
     end)
 end)
 
-print("[ValeraDayn V6] Все мега-функции успешно активированы!")
+print("[ValeraDayn V8] Обновление успешно запущено!")
